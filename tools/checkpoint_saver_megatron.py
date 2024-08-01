@@ -34,7 +34,7 @@ def save_checkpoint(queue, args):
         from megatron.global_vars import set_global_variables, get_args
         from megatron.core.enums import ModelType
         from megatron.tokenizer.tokenizer import _vocab_size_with_padding
-        from megatron import fused_kernels
+        # from megatron import fused_kernels
         from megatron.core import mpu
     except ModuleNotFoundError:
         print("Unable to import Megatron, please specify the path to Megatron using --megatron-path. Exiting.")
@@ -195,7 +195,7 @@ def save_checkpoint(queue, args):
     mpu.set_pipeline_model_parallel_world_size(args.target_pipeline_parallel_size)
     mpu.set_tensor_model_parallel_rank(0)
     mpu.set_pipeline_model_parallel_rank(0)
-    fused_kernels.load(margs)
+    # fused_kernels.load(margs)
 
     # Embeddings
     #-----------
