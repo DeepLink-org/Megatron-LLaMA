@@ -32,7 +32,7 @@ def _load_checkpoint(queue, args):
         from megatron.model import module
         from megatron.core import mpu
         from megatron.core.enums import ModelType
-        from megatron import fused_kernels
+        # from megatron import fused_kernels
     except ModuleNotFoundError:
         print("Unable to import Megatron, please specify the path to Megatron using --megatron-path. Exiting.")
         queue.put("exit")
@@ -152,7 +152,7 @@ def _load_checkpoint(queue, args):
     mpu.set_tensor_model_parallel_world_size(margs.tensor_model_parallel_size)
     mpu.set_pipeline_model_parallel_world_size(margs.pipeline_model_parallel_size)
     mpu.set_virtual_pipeline_model_parallel_world_size(margs.virtual_pipeline_model_parallel_size)
-    fused_kernels.load(margs)
+    # fused_kernels.load(margs)
 
     # Get true (non-padded) vocab size
     if args.true_vocab_size is not None:

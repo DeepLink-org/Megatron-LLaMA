@@ -3,7 +3,7 @@
 """Megatron overlapped distributed optimizer."""
 
 from typing import List, Optional
-from apex.optimizers import FusedAdam as Adam
+# from apex.optimizers import FusedAdam as Adam
 import torch
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 from torch import distributed as dist
