@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from datetime import timedelta
 
-from megatron import fused_kernels
+# from megatron import fused_kernels
 from megatron import get_adlr_autoresume
 from megatron import get_args
 from megatron import get_tensorboard_writer
@@ -124,25 +124,23 @@ def _compile_dependencies():
                   ' back to unfused kernel invocations.', flush=True)
     
     # Always build on rank zero first.
-    if torch.distributed.get_rank() == 0:
-        start_time = time.time()
-        print('> compiling and loading fused kernels ...', flush=True)
-        fused_kernels.load(args)
-        torch.distributed.barrier()
-    else:
-        torch.distributed.barrier()
-        fused_kernels.load(args)
+    # if torch.distributed.get_rank() == 0:
+    #     start_time = time.time()
+    #     print('> compiling and loading fused kernels ...', flush=True)
+    #     fused_kernels.load(args)
+    #     torch.distributed.barrier()
+    # else:
+    #     torch.distributed.barrier()
+    #     fused_kernels.load(args)
     # Simple barrier to make sure all ranks have passed the
     # compilation phase successfully before moving on to the
     # rest of the program. We think this might ensure that
     # the lock is released.
-    torch.distributed.barrier()
-    if torch.distributed.get_rank() == 0:
-        print('>>> done with compiling and loading fused kernels. '
-              'Compilation time: {:.3f} seconds'.format(
-                  time.time() - start_time), flush=True)
-
-
+    # torch.distributed.barrier()
+    # if torch.distributed.get_rank() == 0:
+    #     print('>>> done with compiling and loading fused kernels. '
+    #           'Compilation time: {:.3f} seconds'.format(
+    #               time.time() - start_time), flush=True)
 
 def _initialize_distributed():
     """Initialize torch.distributed and core model parallel."""
@@ -241,7 +239,7 @@ def set_jit_fusion_options():
         torch._C._jit_override_can_fuse_on_cpu(False)
         torch._C._jit_override_can_fuse_on_gpu(False)
         torch._C._jit_set_texpr_fuser_enabled(False)
-        torch._C._jit_set_nvfuser_enabled(True)
+        # torch._C._jit_set_nvfuser_enabled(True)
         torch._C._debug_set_autodiff_subgraph_inlining(False)
     else:
         # legacy pytorch fuser

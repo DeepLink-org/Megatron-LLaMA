@@ -4,6 +4,7 @@
 import os
 
 import torch
+# import torch_dipu
 from functools import partial
 from megatron import get_args
 from megatron import print_rank_0

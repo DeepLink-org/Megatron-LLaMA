@@ -2,7 +2,7 @@
 
 """Megatron distributed optimizer."""
 
-from apex.optimizers import FusedAdam as Adam
+# from apex.optimizers import FusedAdam as Adam
 import math
 import torch
 
@@ -366,8 +366,8 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         # Verify that contiguous buffers are being used.
         # - Note: this should already be checked in arguments.py.
         assert use_contiguous_buffers_in_local_ddp
-        assert isinstance(optimizer, Adam), \
-            "Only Adam currently supported, due to checkpointing requirements."
+        # assert isinstance(optimizer, Adam), \
+        #     "Only Adam currently supported, due to checkpointing requirements."
 
         # Model grad buffer ranges.
         self.model_gbuf_ranges = []
