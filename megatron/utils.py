@@ -7,8 +7,8 @@ import sys
 import torch
 from torch.nn.parallel import DistributedDataParallel as torchDDP
 
-from apex.multi_tensor_apply import multi_tensor_applier
-import amp_C
+# from apex.multi_tensor_apply import multi_tensor_applier
+# import amp_C
 
 from megatron import (
     get_args,
@@ -34,36 +34,36 @@ def unwrap_model(model, module_instances=(torchDDP)):
     return unwrapped_model
 
 
-def calc_params_l2_norm(model):
-    """Calculate l2 norm of parameters """
-    args = get_args()
-    if not isinstance(model, list):
-        model = [model]
-    # Remove duplicate params.
-    params_data = []
-    for model_ in model:
-        for param in model_.parameters():
-            is_not_shared = param_is_not_shared(param)
-            is_not_tp_duplicate = param_is_not_tensor_parallel_duplicate(param)
-            if is_not_shared and is_not_tp_duplicate:
-                if args.bf16:
-                    params_data.append(param.data.float())
-                else:
-                    params_data.append(param.data)
-    # Calculate norm
-    dummy_overflow_buf = torch.cuda.IntTensor([0])
-    norm, _ = multi_tensor_applier(
-        amp_C.multi_tensor_l2norm,
-        dummy_overflow_buf,
-        [params_data],
-        False # no per-parameter norm
-    )
-    norm_2 = norm * norm
-    # Sum across all model-parallel GPUs.
-    torch.distributed.all_reduce(norm_2,
-                                 op=torch.distributed.ReduceOp.SUM,
-                                 group=mpu.get_model_parallel_group())
-    return norm_2.item() ** 0.5
+# def calc_params_l2_norm(model):
+#     """Calculate l2 norm of parameters """
+#     args = get_args()
+#     if not isinstance(model, list):
+#         model = [model]
+#     # Remove duplicate params.
+#     params_data = []
+#     for model_ in model:
+#         for param in model_.parameters():
+#             is_not_shared = param_is_not_shared(param)
+#             is_not_tp_duplicate = param_is_not_tensor_parallel_duplicate(param)
+#             if is_not_shared and is_not_tp_duplicate:
+#                 if args.bf16:
+#                     params_data.append(param.data.float())
+#                 else:
+#                     params_data.append(param.data)
+#     # Calculate norm
+#     dummy_overflow_buf = torch.cuda.IntTensor([0])
+#     norm, _ = multi_tensor_applier(
+#         amp_C.multi_tensor_l2norm,
+#         dummy_overflow_buf,
+#         [params_data],
+#         False # no per-parameter norm
+#     )
+#     norm_2 = norm * norm
+#     # Sum across all model-parallel GPUs.
+#     torch.distributed.all_reduce(norm_2,
+#                                  op=torch.distributed.ReduceOp.SUM,
+#                                  group=mpu.get_model_parallel_group())
+#     return norm_2.item() ** 0.5
 
 
 def average_losses_across_data_parallel_group(losses):

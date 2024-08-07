@@ -12,19 +12,27 @@ import importlib
 
 from megatron.core.utils import make_viewless_tensor
 from megatron import get_args
+from .normalization_fused_layer_norm import FusedRMSNormAffineFunction
 
-try:
-    from apex.contrib.layer_norm.layer_norm import FastLayerNormFN
-    HAVE_PERSIST_LAYER_NORM = True
-except:
-    HAVE_PERSIST_LAYER_NORM = False
 
-from apex.normalization.fused_layer_norm import FusedLayerNormAffineFunction, FusedRMSNormAffineFunction
-
+HAVE_PERSIST_LAYER_NORM = False
 
 global fused_layer_norm_cuda
 fused_layer_norm_cuda = None
 
+def manual_rms_norm(my_input, normalized_shape, weight, eps):
+    # layer norm should always be calculated in float32
+    dims = tuple(i for i in range(-1, -len(normalized_shape) - 1, -1))
+    variance = my_input.to(torch.float32).pow(2).mean(dims, keepdim=True)
+    my_input = my_input * torch.rsqrt(variance + eps)
+
+    if weight is None:
+        return my_input
+
+    # convert into half-precision if necessary
+    if weight.dtype in [torch.float16, torch.bfloat16]:
+        my_input = my_input.to(weight.dtype)
+    return weight * my_input
 
 class MixedFusedLayerNorm(torch.nn.Module):
 
@@ -39,7 +47,7 @@ class MixedFusedLayerNorm(torch.nn.Module):
         self.apply_layernorm_1p = apply_layernorm_1p
 
         global fused_layer_norm_cuda
-        fused_layer_norm_cuda = importlib.import_module("fused_layer_norm_cuda")
+        fused_layer_norm_cuda = None
 
         # List of hiddens sizes supported in the persistent layer norm kernel
         # If the hidden size is not supported, fall back to the non-persistent
@@ -88,6 +96,7 @@ class MixedFusedLayerNorm(torch.nn.Module):
 
     if args.RMSNorm:
         return FusedRMSNormAffineFunction.apply(input, weight, self.normalized_shape, self.eps)
+        # return manual_rms_norm(input, self.normalized_shape, weight, self.eps)
 
     if self.no_persist_layer_norm:
         return FusedLayerNormAffineFunction.apply(input, weight, self.bias, self.normalized_shape, self.eps)
