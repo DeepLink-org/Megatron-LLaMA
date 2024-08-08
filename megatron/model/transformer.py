@@ -17,16 +17,20 @@ from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb
 from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
+try:
+    from deeplink_ext.interntrain_ops.flash_attention import FlashSelfAttention
+except Exception as e:
+    from deeplink_ext.interntrain_ops.flash_attention_fallback import SelfAttention as FlashSelfAttention
 
 try:
     from einops import rearrange
 except ImportError:
     rearrange = None
 
-try:
-    from flash_attn.flash_attn_interface import flash_attn_unpadded_func
-except ImportError:
-    flash_attn_unpadded_func = None
+# try:
+#     from flash_attn.flash_attn_interface import flash_attn_unpadded_func
+# except ImportError:
+#     flash_attn_unpadded_func = None
 
 """ We use the following notation throughout this file:
      h: hidden size
@@ -199,7 +203,6 @@ class SwitchMLP(MegatronModule):
 
         return output_total, output_bias_total
 
-
 class CoreAttention(MegatronModule):
 
     def __init__(self, layer_number,
@@ -335,8 +338,7 @@ class CoreAttention(MegatronModule):
 
         return context_layer
 
-
-class FlashSelfAttention(torch.nn.Module):
+class OriFlashSelfAttention(torch.nn.Module):
     """Implement the scaled dot product attention with softmax.
     Arguments
     ---------
@@ -349,8 +351,8 @@ class FlashSelfAttention(torch.nn.Module):
     def __init__(self, causal=False, softmax_scale=None, attention_dropout=0.0,
                  device=None, dtype=None):
         super().__init__()
-        assert flash_attn_unpadded_func is not None, ('Please install FlashAttention first, '
-                                                      'e.g., with pip install flash-attn')
+        # assert flash_attn_unpadded_func is not None, ('Please install FlashAttention first, '
+        #                                               'e.g., with pip install flash-attn')
         assert rearrange is not None, 'Please install einops first, e.g., with pip install einops'
         self.causal = causal
         self.softmax_scale = softmax_scale
@@ -386,16 +388,34 @@ class FlashSelfAttention(torch.nn.Module):
             cu_seqlens_k = torch.arange(0, (batch_size + 1) * seqlen_k, step=seqlen_k, dtype=torch.int32,
                         device=q.device)
             self.dropout_p = 0
+        
+        attention_layer = FlashSelfAttention(causal=True, softmax_scale=None, attention_dropout=0.0)
 
-        output = flash_attn_unpadded_func(
-            q, k, v, cu_seqlens_q, cu_seqlens_k, seqlen_q, seqlen_k,
-            self.dropout_p,
-            softmax_scale=self.softmax_scale, causal=is_causal
+        output = attention_layer.forward(
+            None,
+            q,
+            k,
+            v,
+            None,
+            True,
+            None,
+            None,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            seqlen_q,
+            seqlen_k,
+            None,
+            self.dropout_p
         )
+
+        # output = flash_attn_unpadded_func(
+        #     q, k, v, cu_seqlens_q, cu_seqlens_k, seqlen_q, seqlen_k,
+        #     self.dropout_p,
+        #     softmax_scale=self.softmax_scale, causal=is_causal
+        # )
 
         output = rearrange(output, '(b s) ... -> b s ...', b=batch_size)
         return output
-
 
 class ParallelAttention(MegatronModule):
     """Parallel self-attention layer abstract class.
@@ -418,9 +438,9 @@ class ParallelAttention(MegatronModule):
 
         self.use_flash_attn = args.use_flash_attn
         if self.use_flash_attn:
-            if flash_attn_unpadded_func is None:
-                raise ImportError('FlashAttention is not installed, please install with '
-                                  'pip install flash-attn')
+            # if flash_attn_unpadded_func is None:
+            #     raise ImportError('FlashAttention is not installed, please install with '
+            #                       'pip install flash-attn')
             assert attention_type == AttnType.self_attn, ('FlashAttention code path only supports '
                                                           'self-attention for now')
             assert self.attn_mask_type == AttnMaskType.causal, ('FlashAttention code path only '
@@ -458,7 +478,6 @@ class ParallelAttention(MegatronModule):
                 async_tensor_model_parallel_allreduce=args.async_tensor_model_parallel_allreduce,
                 **_args_to_kwargs())
 
-
             self.key_value = tensor_parallel.ColumnParallelLinear(
                 args.hidden_size,
                 2 * projection_size,
@@ -473,7 +492,7 @@ class ParallelAttention(MegatronModule):
         self.checkpoint_core_attention = args.recompute_granularity == 'selective'
 
         if self.use_flash_attn:
-            self.core_attention_flash = FlashSelfAttention(
+            self.core_attention_flash = OriFlashSelfAttention(
                 causal=True, attention_dropout=args.attention_dropout
             )
 
@@ -610,7 +629,6 @@ class ParallelAttention(MegatronModule):
             value_layer = inference_value_memory[
                 :sequence_end, batch_start:batch_end, ...]
 
-
             # adjust the key rotary positional embedding
             if rotary_pos_emb is not None:
                 q_pos_emb, k_pos_emb = rotary_pos_emb
@@ -630,7 +648,6 @@ class ParallelAttention(MegatronModule):
                     q_pos_emb = q_pos_emb[:sequence_end, :, :, :]
                 k_pos_emb = k_pos_emb[:sequence_end, :, :, :]
                 rotary_pos_emb = (q_pos_emb, k_pos_emb)
-
 
         # ==================================
         # core attention computation
@@ -671,7 +688,6 @@ class ParallelAttention(MegatronModule):
 
         return output, bias
 
-
 def bias_dropout_add(x, bias, residual, prob, training):
     # type: (Tensor, Optional[Tensor], Tensor, float, bool) -> Tensor
     if bias is not None:
@@ -680,12 +696,10 @@ def bias_dropout_add(x, bias, residual, prob, training):
     out = residual + out
     return out
 
-
 def get_bias_dropout_add(training):
     def _bias_dropout_add(x, bias, residual, prob):
         return bias_dropout_add(x, bias, residual, prob, training)
     return _bias_dropout_add
-
 
 @torch.jit.script
 def bias_dropout_add_fused_train(x: torch.Tensor,
@@ -694,14 +708,12 @@ def bias_dropout_add_fused_train(x: torch.Tensor,
                                  prob: float) -> torch.Tensor:
     return bias_dropout_add(x, bias, residual, prob, True)
 
-
 @torch.jit.script
 def bias_dropout_add_fused_inference(x: torch.Tensor,
                                      bias: Optional[torch.Tensor],
                                      residual: torch.Tensor,
                                      prob: float) -> torch.Tensor:
     return bias_dropout_add(x, bias, residual, prob, False)
-
 
 class ParallelTransformerLayer(MegatronModule):
     """A single transformer layer.
@@ -894,7 +906,6 @@ class ParallelTransformerLayer(MegatronModule):
 
         return output
 
-
 class NoopTransformerLayer(MegatronModule):
     """A single 'no-op' transformer layer.
 
@@ -919,7 +930,6 @@ class NoopTransformerLayer(MegatronModule):
                 encoder_output=None, enc_dec_attn_mask=None,
                 inference_params=None):
         return hidden_states.clone()
-
 
 def _get_num_layers(args, is_encoder_and_decoder_model, is_decoder=False):
     """Compute the number of transformer layers resident on the current rank."""
@@ -971,7 +981,6 @@ def _get_num_layers(args, is_encoder_and_decoder_model, is_decoder=False):
         else:
             num_layers = args.decoder_num_layers
     return num_layers
-
 
 class ParallelTransformer(MegatronModule):
     """Transformer class."""
